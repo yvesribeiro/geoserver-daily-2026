@@ -1,0 +1,7 @@
+pandas
+requests
+PyYAML
+python-dotenv
+geopandas
+shapely
+pyogrio

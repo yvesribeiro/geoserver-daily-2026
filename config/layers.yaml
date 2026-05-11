@@ -1,0 +1,115 @@
+project:
+  name: "geoserver_daily_2026"
+  timezone: "America/Sao_Paulo"
+  overwrite_same_day_snapshot: true
+
+geoserver:
+  base_wfs_url: "https://geoserver.semob.df.gov.br/geoserver/semob/ows"
+  service: "WFS"
+  version: "1.0.0"
+
+calendar:
+  comparison:
+    util: "last_available_util"
+    sabado: "last_available_sabado"
+    domingo: "last_available_domingo"
+
+output:
+  save_snapshots: true
+  save_logs: true
+  save_reports: true
+  send_teams: true
+
+layers:
+  frota_operadora:
+    title: "Frota por Operadora"
+    geoserver_name: "semob:Frota por Operadora"
+    format: "csv"
+    extension: "csv"
+    key:
+      - numero_veiculo
+    group_by:
+      - operadora
+    compare:
+      additions: true
+      removals: true
+      modifications: true
+    summary_fields:
+      - tipo_onibus
+      - ano_fabrica
+    modification_policy:
+      existing_key_changed_attributes: "log_additional"
+
+  viagens_programadas_linha:
+    title: "Viagens Programadas por Linha"
+    geoserver_name: "semob:Viagens Programadas por Linha"
+    format: "csv"
+    extension: "csv"
+    key:
+      - sg_operadora
+      - cd_linha
+      - cs_sentido
+      - hora_prevista
+      - tipo_dia_operacional
+    group_by:
+      - sg_operadora
+      - cd_linha
+      - cs_sentido
+    schedule_columns:
+      domingo: st_domingo
+      segunda: st_segunda
+      terca: st_terca
+      quarta: st_quarta
+      quinta: st_quinta
+      sexta: st_sexta
+      sabado: st_sabado
+    day_type_filter:
+      util:
+        - st_segunda
+        - st_terca
+        - st_quarta
+        - st_quinta
+        - st_sexta
+      sabado:
+        - st_sabado
+      domingo:
+        - st_domingo
+    time_change_policy: "removed_and_added"
+    report_detail:
+      list_totals_only: true
+
+  ponto_parada_v2025:
+    title: "Ponto de paradas 2025"
+    geoserver_name: "semob:ponto_parada_v2025"
+    format: "geojson"
+    extension: "geojson"
+    key:
+      - cod_parada_v2025
+    group_by: []
+    compare:
+      additions: true
+      removals: true
+      geometry_changes: true
+      attribute_changes: true
+    geometry_tolerance_m: 0
+    report:
+      list_codes: true
+
+  itinerario_espacial_linhas:
+    title: "Itinerário Espacial das Linhas"
+    geoserver_name: "semob:itinerario_espacial"
+    format: "geojson"
+    extension: "geojson"
+    key:
+      - id_linha
+      - lin_sentido
+    group_by: []
+    compare:
+      additions: true
+      removals: true
+      geometry_changes: true
+      attribute_changes: true
+    geometry_tolerance_m: 0
+    report:
+      group_by_operator: false
+      list_changed_lines: true

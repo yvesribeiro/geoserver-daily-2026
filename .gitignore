@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+
+config/teams_webhook.env
+
+data/snapshots/
+data/normalized/
+data/diffs/
+data/reports/
+data/logs/
+
+.env
