@@ -57,18 +57,22 @@ def compare_geo_layer(
         key_cols=key_cols,
     )
 
+    ignore_cols = {
+        "id",
+        "FID",
+        "geometry",
+        "_comparison_key",
+        "_geometry_wkt",
+    }
+
+    ignore_cols.update(layer_cfg.get("ignore_attribute_columns", []))
+
     attribute_changes = compare_common_attributes(
         previous_gdf=previous_gdf,
         current_gdf=current_gdf,
         common_keys=common_keys,
         key_cols=key_cols,
-        ignore_cols={
-            "id",
-            "FID",
-            "geometry",
-            "_comparison_key",
-            "_geometry_wkt",
-        },
+        ignore_cols=ignore_cols,
     )
 
     result = {

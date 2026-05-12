@@ -37,6 +37,10 @@ layers:
     summary_fields:
       - tipo_onibus
       - ano_fabrica
+    ignore_attribute_columns:
+      - FID
+      - id_frota
+      - data_referencia
     modification_policy:
       existing_key_changed_attributes: "log_additional"
 
@@ -92,6 +96,9 @@ layers:
       geometry_changes: true
       attribute_changes: true
     geometry_tolerance_m: 0
+    ignore_attribute_columns:
+      - id
+      - dt_carga_dados
     report:
       list_codes: true
 
@@ -110,6 +117,9 @@ layers:
       geometry_changes: true
       attribute_changes: true
     geometry_tolerance_m: 0
+    ignore_attribute_columns:
+      - id
+      - dataregistro
     report:
       group_by_operator: false
       list_changed_lines: true

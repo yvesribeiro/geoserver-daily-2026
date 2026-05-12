@@ -55,12 +55,19 @@ def compare_table_layer(
     added_df = current_df[current_df["_comparison_key"].isin(added_keys)].copy()
     removed_df = previous_df[previous_df["_comparison_key"].isin(removed_keys)].copy()
 
+    ignore_cols = {
+        "_comparison_key",
+        "FID",
+    }
+
+    ignore_cols.update(layer_cfg.get("ignore_attribute_columns", []))
+
     modifications = compare_common_rows(
         previous_df=previous_df,
         current_df=current_df,
         common_keys=common_keys,
         key_cols=key_cols,
-        ignore_cols={"_comparison_key", "FID"},
+        ignore_cols=ignore_cols,
     )
 
     result = {
