@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Any
 
 
+MAX_ITEMS_PER_SECTION = 10
+
+
 def build_report(
     run_id: str,
     current_date: str,
@@ -12,24 +15,68 @@ def build_report(
 ) -> str:
     lines: list[str] = []
 
-    lines.append(f"# Relatório diário GeoServer — {current_date}")
-    lines.append("")
-    lines.append(f"**Tipo de dia:** {day_type}")
-    lines.append(f"**Execução:** {run_id}")
+    lines.append("📊 Auditor automático dos dados STPC/DF - SEMOB")
+    lines.append(f"📅 Data: {current_date}")
+    lines.append(f"🗓️ Tipo de dia: {format_day_type(day_type)}")
     lines.append("")
 
     if not results:
-        lines.append("Nenhuma comparação foi executada, pois não havia snapshots anteriores disponíveis.")
+        lines.append("ℹ️ Situação geral")
+        lines.append("Primeira execução ou ausência de base anterior comparável.")
+        lines.append("")
+        lines.append("Os dados foram salvos para permitir comparação nas próximas execuções.")
         return "\n".join(lines)
 
-    total_changes = sum(get_total_changes(result) for result in results)
+    changed_results = [result for result in results if has_changes(result)]
 
-    if total_changes == 0:
-        lines.append("✅ Nenhuma alteração identificada nas camadas comparadas.")
+    if not changed_results:
+        lines.append("✅ Situação geral")
+        lines.append("Nenhuma alteração identificada nas bases monitoradas.")
         lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("")
+        lines.extend(render_all_layers_status(results))
+        return "\n".join(lines).strip()
 
-    for result in results:
-        layer_id = result["layer_id"]
+    lines.append("⚠️ Situação geral")
+    lines.append(
+        f"Foram identificadas alterações em {len(changed_results)} de "
+        f"{len(results)} bases monitoradas."
+    )
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("")
+    lines.extend(render_all_layers_status(results))
+
+    return "\n".join(lines).strip()
+
+
+def format_day_type(day_type: str) -> str:
+    mapping = {
+        "util": "Útil",
+        "sabado": "Sábado",
+        "domingo": "Domingo",
+    }
+    return mapping.get(day_type, day_type)
+
+
+def render_all_layers_status(results: list[dict[str, Any]]) -> list[str]:
+    layer_order = [
+        "frota_operadora",
+        "viagens_programadas_linha",
+        "ponto_parada_v2025",
+        "itinerario_espacial_linhas",
+    ]
+
+    result_by_layer = {result["layer_id"]: result for result in results}
+
+    lines: list[str] = []
+
+    for layer_id in layer_order:
+        result = result_by_layer.get(layer_id)
+
+        if result is None:
+            continue
 
         if layer_id == "frota_operadora":
             lines.extend(render_frota(result))
@@ -44,7 +91,7 @@ def build_report(
 
         lines.append("")
 
-    return "\n".join(lines)
+    return lines
 
 
 def get_total_changes(result: dict[str, Any]) -> int:
@@ -59,186 +106,248 @@ def get_total_changes(result: dict[str, Any]) -> int:
     )
 
 
+def has_changes(result: dict[str, Any]) -> bool:
+    return get_total_changes(result) > 0
+
+
 def render_frota(result: dict[str, Any]) -> list[str]:
-    counts = result["counts"]
+    lines: list[str] = []
+    lines.append("🚍 Frota por Operadora")
+
+    if not has_changes(result):
+        lines.append("✅ Sem alterações identificadas.")
+        return lines
+
+    counts = result.get("counts", {})
     summary = result.get("summary", {})
 
-    lines = []
-    lines.append("## 🚍 Frota por Operadora")
-    lines.append("")
-    lines.append(f"- Veículos adicionados: **{counts.get('added', 0)}**")
-    lines.append(f"- Veículos removidos: **{counts.get('removed', 0)}**")
-    lines.append(f"- Veículos com alteração cadastral: **{counts.get('modified_records', 0)}**")
-    lines.append("")
+    added_count = int(counts.get("added", 0))
+    removed_count = int(counts.get("removed", 0))
+    modified_count = int(counts.get("modified_records", 0))
+
+    if added_count:
+        lines.append(f"➕ {added_count} veículos adicionados.")
+
+    if removed_count:
+        lines.append(f"➖ {removed_count} veículos removidos.")
+
+    if modified_count:
+        lines.append(f"📝 {modified_count} veículos com alteração cadastral.")
 
     added = summary.get("added_by_operator", [])
     removed = summary.get("removed_by_operator", [])
 
-    if added:
-        lines.append("### Adições por operadora")
-        lines.append("")
-        for item in added:
-            lines.append(f"**{item['operadora']}** — adicionados {item['total']} veículos.")
-            for tipo in item["tipos"]:
-                anos_txt = ", ".join(
-                    f"{ano['quantidade']} do ano {ano['ano_fabrica']}"
-                    for ano in tipo["anos"]
-                )
-                lines.append(f"- {tipo['total']} do tipo {tipo['tipo_onibus']}: {anos_txt}.")
-            lines.append("")
+    for item in added[:MAX_ITEMS_PER_SECTION]:
+        operadora = item.get("operadora", "")
+        total = item.get("total", 0)
+        lines.append(f"• {operadora}: adicionados {total} veículos.")
 
-    if removed:
-        lines.append("### Remoções por operadora")
-        lines.append("")
-        for item in removed:
-            lines.append(f"**{item['operadora']}** — removidos {item['total']} veículos.")
-            for tipo in item["tipos"]:
-                anos_txt = ", ".join(
-                    f"{ano['quantidade']} do ano {ano['ano_fabrica']}"
-                    for ano in tipo["anos"]
-                )
-                lines.append(f"- {tipo['total']} do tipo {tipo['tipo_onibus']}: {anos_txt}.")
-            lines.append("")
+        for tipo in item.get("tipos", []):
+            anos_txt = ", ".join(
+                f"{ano.get('quantidade', 0)} do ano {ano.get('ano_fabrica', '')}"
+                for ano in tipo.get("anos", [])
+            )
+            tipo_onibus = tipo.get("tipo_onibus", "")
+            total_tipo = tipo.get("total", 0)
+            lines.append(f"  - {total_tipo} do tipo {tipo_onibus}: {anos_txt}.")
 
-    if counts.get("modified_records", 0):
-        lines.append("Alterações cadastrais em veículos existentes foram salvas no log técnico.")
-        lines.append("")
+    if len(added) > MAX_ITEMS_PER_SECTION:
+        lines.append(f"• Outros {len(added) - MAX_ITEMS_PER_SECTION} agrupamentos não listados.")
+
+    for item in removed[:MAX_ITEMS_PER_SECTION]:
+        operadora = item.get("operadora", "")
+        total = item.get("total", 0)
+        lines.append(f"• {operadora}: removidos {total} veículos.")
+
+        for tipo in item.get("tipos", []):
+            anos_txt = ", ".join(
+                f"{ano.get('quantidade', 0)} do ano {ano.get('ano_fabrica', '')}"
+                for ano in tipo.get("anos", [])
+            )
+            tipo_onibus = tipo.get("tipo_onibus", "")
+            total_tipo = tipo.get("total", 0)
+            lines.append(f"  - {total_tipo} do tipo {tipo_onibus}: {anos_txt}.")
+
+    if len(removed) > MAX_ITEMS_PER_SECTION:
+        lines.append(f"• Outros {len(removed) - MAX_ITEMS_PER_SECTION} agrupamentos não listados.")
 
     return lines
 
 
 def render_viagens(result: dict[str, Any]) -> list[str]:
-    counts = result["counts"]
+    lines: list[str] = []
+    lines.append("🚌 Viagens programadas por linha")
+
+    if not has_changes(result):
+        lines.append("✅ Sem alterações identificadas.")
+        return lines
+
+    counts = result.get("counts", {})
     summary = result.get("summary", [])
 
-    lines = []
-    lines.append("## 🚌 Viagens Programadas por Linha")
-    lines.append("")
-    lines.append(f"- Viagens adicionadas: **{counts.get('added', 0)}**")
-    lines.append(f"- Viagens removidas: **{counts.get('removed', 0)}**")
-    lines.append("")
+    added_count = int(counts.get("added", 0))
+    removed_count = int(counts.get("removed", 0))
 
-    if summary:
-        lines.append("### Alterações por operadora, linha e sentido")
-        lines.append("")
-        for item in summary:
-            sg_operadora = item.get("sg_operadora", "")
-            cd_linha = item.get("cd_linha", "")
-            cs_sentido = item.get("cs_sentido", "")
-            adicionadas = item.get("adicionadas", 0)
-            removidas = item.get("removidas", 0)
+    if added_count:
+        lines.append(f"➕ {added_count} viagens adicionadas.")
 
-            lines.append(
-                f"- **{sg_operadora}** — Linha **{cd_linha}**, sentido **{cs_sentido}**: "
-                f"{adicionadas} adicionadas, {removidas} removidas."
-            )
-        lines.append("")
+    if removed_count:
+        lines.append(f"➖ {removed_count} viagens removidas.")
+
+    visible_summary = [
+        item
+        for item in summary
+        if int(item.get("adicionadas", 0)) or int(item.get("removidas", 0))
+    ]
+
+    for item in visible_summary[:MAX_ITEMS_PER_SECTION]:
+        sg_operadora = item.get("sg_operadora", "")
+        cd_linha = item.get("cd_linha", "")
+        cs_sentido = item.get("cs_sentido", "")
+        adicionadas = int(item.get("adicionadas", 0))
+        removidas = int(item.get("removidas", 0))
+
+        partes = []
+        if adicionadas:
+            partes.append(f"{adicionadas} adicionadas")
+        if removidas:
+            partes.append(f"{removidas} removidas")
+
+        lines.append(
+            f"• {sg_operadora} - Linha {cd_linha}, sentido {cs_sentido}: "
+            + ", ".join(partes)
+            + "."
+        )
+
+    if len(visible_summary) > MAX_ITEMS_PER_SECTION:
+        lines.append(
+            f"• Outros {len(visible_summary) - MAX_ITEMS_PER_SECTION} agrupamentos não listados."
+        )
 
     return lines
 
 
 def render_pontos(result: dict[str, Any]) -> list[str]:
-    counts = result["counts"]
+    lines: list[str] = []
+    lines.append("📍 Pontos de parada")
+
+    if not has_changes(result):
+        lines.append("✅ Sem alterações identificadas.")
+        return lines
+
+    counts = result.get("counts", {})
     summary = result.get("summary", {})
 
-    lines = []
-    lines.append("## 📍 Ponto de paradas 2025")
-    lines.append("")
-    lines.append(f"- Paradas adicionadas: **{counts.get('added', 0)}**")
-    lines.append(f"- Paradas removidas: **{counts.get('removed', 0)}**")
-    lines.append(f"- Paradas com geometria alterada: **{counts.get('geometry_changed', 0)}**")
-    lines.append(
-        f"- Paradas com atributos alterados: **{counts.get('attribute_changed_records', 0)}**"
-    )
-    lines.append("")
+    added_count = int(counts.get("added", 0))
+    removed_count = int(counts.get("removed", 0))
+    geometry_count = int(counts.get("geometry_changed", 0))
+    attribute_count = int(counts.get("attribute_changed_records", 0))
 
-    added_codes = summary.get("added_codes", [])
-    removed_codes = summary.get("removed_codes", [])
-    geometry_codes = summary.get("geometry_changed_codes", [])
-    attribute_codes = summary.get("attribute_changed_codes", [])
+    if added_count:
+        lines.append(f"➕ {added_count} pontos adicionados.")
+        add_codes(lines, "Códigos adicionados", summary.get("added_codes", []))
 
-    if added_codes:
-        lines.append(f"**Códigos adicionados:** {', '.join(added_codes)}")
-        lines.append("")
+    if removed_count:
+        lines.append(f"➖ {removed_count} pontos removidos.")
+        add_codes(lines, "Códigos removidos", summary.get("removed_codes", []))
 
-    if removed_codes:
-        lines.append(f"**Códigos removidos:** {', '.join(removed_codes)}")
-        lines.append("")
+    if geometry_count:
+        lines.append(f"📍 {geometry_count} pontos com localização alterada.")
+        add_codes(
+            lines,
+            "Códigos com localização alterada",
+            summary.get("geometry_changed_codes", []),
+        )
 
-    if geometry_codes:
-        lines.append(f"**Códigos com geometria alterada:** {', '.join(geometry_codes)}")
-        lines.append("")
-
-    if attribute_codes:
-        lines.append(f"**Códigos com atributos alterados:** {', '.join(attribute_codes)}")
-        lines.append("")
+    if attribute_count:
+        lines.append(f"📝 {attribute_count} pontos com dados cadastrais alterados.")
+        add_codes(
+            lines,
+            "Códigos com dados cadastrais alterados",
+            summary.get("attribute_changed_codes", []),
+        )
 
     return lines
 
 
 def render_itinerarios(result: dict[str, Any]) -> list[str]:
-    counts = result["counts"]
+    lines: list[str] = []
+    lines.append("🗺️ Itinerário espacial")
+
+    if not has_changes(result):
+        lines.append("✅ Sem alterações identificadas.")
+        return lines
+
+    counts = result.get("counts", {})
     summary = result.get("summary", {})
 
-    lines = []
-    lines.append("## 🗺️ Itinerário Espacial das Linhas")
-    lines.append("")
-    lines.append(f"- Itinerários adicionados: **{counts.get('added', 0)}**")
-    lines.append(f"- Itinerários removidos: **{counts.get('removed', 0)}**")
-    lines.append(f"- Itinerários com trajeto alterado: **{counts.get('geometry_changed', 0)}**")
-    lines.append(
-        f"- Itinerários com atributos alterados: **{counts.get('attribute_changed_records', 0)}**"
-    )
-    lines.append("")
+    added_count = int(counts.get("added", 0))
+    removed_count = int(counts.get("removed", 0))
+    geometry_count = int(counts.get("geometry_changed", 0))
+    attribute_count = int(counts.get("attribute_changed_records", 0))
 
-    added = summary.get("added_lines", [])
-    removed = summary.get("removed_lines", [])
-    geometry_changed = summary.get("geometry_changed_lines", [])
-    attribute_changed = summary.get("attribute_changed_lines", [])
+    if added_count:
+        lines.append(f"➕ {added_count} itinerários adicionados.")
+        add_lines(lines, summary.get("added_lines", []))
 
-    if added:
-        lines.append("### Itinerários adicionados")
-        lines.extend(render_line_records(added))
-        lines.append("")
+    if removed_count:
+        lines.append(f"➖ {removed_count} itinerários removidos.")
+        add_lines(lines, summary.get("removed_lines", []))
 
-    if removed:
-        lines.append("### Itinerários removidos")
-        lines.extend(render_line_records(removed))
-        lines.append("")
+    if geometry_count:
+        lines.append(f"🛣️ {geometry_count} itinerários com trajeto alterado.")
+        add_lines(lines, summary.get("geometry_changed_lines", []))
 
-    if geometry_changed:
-        lines.append("### Itinerários com trajeto alterado")
-        lines.extend(render_line_records(geometry_changed))
-        lines.append("")
-
-    if attribute_changed:
-        lines.append("### Itinerários com atributos alterados")
-        lines.extend(render_line_records(attribute_changed))
-        lines.append("")
+    if attribute_count:
+        lines.append(f"📝 {attribute_count} itinerários com dados cadastrais alterados.")
+        add_lines(lines, summary.get("attribute_changed_lines", []))
 
     return lines
 
 
-def render_line_records(records: list[dict[str, Any]]) -> list[str]:
-    lines = []
+def add_codes(lines: list[str], title: str, codes: list[str]) -> None:
+    if not codes:
+        return
 
-    for record in records:
+    shown = codes[:MAX_ITEMS_PER_SECTION]
+    lines.append(f"  {title}: {', '.join(shown)}.")
+
+    if len(codes) > MAX_ITEMS_PER_SECTION:
+        lines.append(f"  Outros {len(codes) - MAX_ITEMS_PER_SECTION} registros não listados.")
+
+
+def add_lines(lines: list[str], records: list[dict[str, Any]]) -> None:
+    if not records:
+        return
+
+    for record in records[:MAX_ITEMS_PER_SECTION]:
         id_linha = record.get("id_linha", "")
         sentido = record.get("lin_sentido", "")
-        lines.append(f"- id_linha **{id_linha}** | sentido **{sentido}**")
+        lines.append(f"  • Linha {id_linha}, sentido {sentido}.")
 
-    return lines
+    if len(records) > MAX_ITEMS_PER_SECTION:
+        lines.append(f"  Outros {len(records) - MAX_ITEMS_PER_SECTION} registros não listados.")
 
 
 def render_generic(result: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    title = result.get("title", result.get("layer_id", "Camada"))
+    lines.append(f"📌 {title}")
+
+    if not has_changes(result):
+        lines.append("✅ Sem alterações identificadas.")
+        return lines
+
     counts = result.get("counts", {})
 
-    lines = []
-    lines.append(f"## {result.get('title', result.get('layer_id'))}")
-    lines.append("")
     for key, value in counts.items():
-        lines.append(f"- {key}: **{value}**")
-    lines.append("")
+        try:
+            number = int(value)
+        except Exception:
+            continue
+
+        if number:
+            lines.append(f"• {key}: {number}")
 
     return lines
 

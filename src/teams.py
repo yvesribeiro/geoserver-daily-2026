@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parents[1]
 TEAMS_ENV_PATH = ROOT_DIR / "config" / "teams_webhook.env"
 
+# Mantém a mensagem curta para evitar limite do Teams/Workflow.
+MAX_TEAMS_MESSAGE_CHARS = 8000
+
 
 def load_teams_webhook_url() -> str:
     """
@@ -29,37 +32,71 @@ def load_teams_webhook_url() -> str:
 
 def markdown_to_plain_text(markdown_text: str) -> str:
     """
-    Converte o relatório Markdown para um texto simples compatível com mensagens básicas.
-    Mantém boa legibilidade no Teams.
+    Mantém a mensagem legível no Teams.
+    Remove apenas marcações básicas de Markdown, preservando quebras de linha.
     """
     text = markdown_text
 
     replacements = {
-        "# ": "",
-        "## ": "",
-        "### ": "",
+        "#": "",
         "**": "",
+        "`": "",
     }
 
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    return text.strip()
+    # Preserva linhas em branco, mas evita excesso.
+    lines = []
+    blank_count = 0
+
+    for line in text.splitlines():
+        clean = line.rstrip()
+
+        if clean.strip() == "":
+            blank_count += 1
+            if blank_count <= 1:
+                lines.append("")
+        else:
+            blank_count = 0
+            lines.append(clean)
+
+    return "\n".join(lines).strip()
+
+
+def compact_report_for_teams(
+    report_text: str,
+    max_chars: int = MAX_TEAMS_MESSAGE_CHARS,
+) -> str:
+    """
+    Reduz o relatório caso fique grande demais para o Teams.
+    """
+    plain_text = markdown_to_plain_text(report_text)
+
+    if len(plain_text) <= max_chars:
+        return plain_text
+
+    footer = (
+        "\n\n[Mensagem resumida para evitar limite de tamanho do Teams.]"
+        "\nDetalhes técnicos disponíveis nos arquivos locais de data/diffs e data/reports."
+    )
+
+    allowed = max_chars - len(footer) - 50
+
+    if allowed < 1000:
+        allowed = max_chars - 300
+
+    return plain_text[:allowed].rstrip() + footer
 
 
 def build_teams_payload(report_text: str) -> dict:
     """
     Monta payload simples para webhook do Teams.
-
-    Esse formato funciona com muitos webhooks que aceitam:
-    {
-      "text": "mensagem"
-    }
     """
-    plain_text = markdown_to_plain_text(report_text)
+    compact_text = compact_report_for_teams(report_text)
 
     return {
-        "text": plain_text,
+        "text": compact_text,
     }
 
 
