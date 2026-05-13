@@ -120,6 +120,8 @@ layers:
     ignore_attribute_columns:
       - id
       - dataregistro
+      - dt_inicio_vigencia
+      - dt_fim_vigencia
     report:
       group_by_operator: false
       list_changed_lines: true
